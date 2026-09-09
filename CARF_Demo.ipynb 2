@@ -4,18 +4,20 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "# CARF Demo \u2014 Cybernetic Agent Reliability Framework for APEX-Agents\n",
+    "# CARF: A Cybernetic Agent Reliability Framework for APEX-Agents\n",
     "\n",
-    "A minimal, working proof of concept built for a proposal to the **Mercor Research Fellowship**, extending Mercor's **APEX-Agents** benchmark.\n",
+    "This notebook is a working proof of concept for CARF, submitted alongside a proposal to the Mercor Research Fellowship extending Mercor's APEX-Agents benchmark.\n",
     "\n",
-    "**What this shows:** APEX-Agents' judge grades an agent's final output, but never the trajectory that produced it \u2014 so two agents can land the same score by very different routes. This notebook classifies the operational units and environmental elements a task requires directly from its prompt, runs the task step by step, and has a judge trace whether each step correctly used the fact it depended on \u2014 catching a drift between steps that an outcome-only judge would miss, then generating feedback and re-running the affected step to check whether it self-corrects.\n",
+    "**Background.** APEX-Agents' judge grades an agent's final output, but does not examine the trajectory that produced it. Two agents can reach the same score by very different routes: one steadily catching and fixing its own mistakes, the other drifting into the right answer without ever checking its work.\n",
     "\n",
-    "**Full repo, plan, and proposal context:** *(add your GitHub link here)*\n",
+    "**What this notebook demonstrates.** On one small task, it classifies the operational units and environmental elements the task requires, directly from the prompt. It then runs the task step by step and tags each step with the unit it fulfils and the element(s) it draws on. A judge examines the full tagged trajectory and traces whether each step correctly used the element it depended on, catching a drift between steps that a final-answer-only judge would miss. The judge's finding is then turned into feedback and sent back to the agent, which retries the affected step.\n",
+    "\n",
+    "**Repository:** [github.com/higginsonlabs/CARF](https://github.com/higginsonlabs/CARF)\n",
     "\n",
     "---\n",
     "\n",
-    "### Before you run this\n",
-    "You'll need your own **free** Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) \u2014 no card required. Paste it into Colab's **Secrets** panel (the key icon in the left sidebar), name it `GEMINI_API_KEY`, and toggle \"Notebook access\" on for it. This keeps your key private to your own Colab session \u2014 it is never shown in this notebook's text or stored in the repo."
+    "### Requirements to run this notebook\n",
+    "A free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), no card required. Add it to Colab's Secrets panel (the key icon in the left sidebar), name it `GEMINI_API_KEY`, and enable notebook access for it. The key stays private to the person running the notebook. It is never written into this notebook or stored in the repository."
    ]
   },
   {
@@ -66,7 +68,7 @@
    "source": [
     "## 2. The task\n",
     "\n",
-    "A small, hand-checkable finance task, deliberately split into explicit steps so there's a real (if tiny) trajectory for the judge to examine \u2014 in a working system an agent would infer this breakdown itself; here it's made explicit for clarity. See `CARF_DEMO_PLAN.md` in the repo for why this task was chosen."
+    "The task is a small, hand-checkable finance problem, split into four explicit steps so the run produces a real trajectory for the judge to examine. In a full system, an agent would infer this step breakdown itself rather than being given it; the breakdown is made explicit here to keep the prototype simple. The reasoning behind this task is set out in `CARF_DEMO_PLAN.md` in the repository."
    ]
   },
   {
@@ -91,7 +93,7 @@
    "source": [
     "## 3. Classify operational units and environmental elements\n",
     "\n",
-    "Both are inferred automatically from the prompt alone, before the agent takes any action \u2014 mirroring Figure 2 of the proposal (operational units 1A\u20131C, environmental elements 1E\u20133E)."
+    "Both are inferred automatically from the task prompt, before any step is run. This mirrors the operational units and environmental elements shown in the CARF architecture diagram included in the proposal."
    ]
   },
   {
@@ -102,14 +104,14 @@
    "source": [
     "def classify_operational_units(prompt: str) -> list:\n",
     "    call_prompt = f'''You are analysing a task prompt to identify the distinct\n",
-    "operational units it requires \u2014 the discrete pieces of work an agent would\n",
+    "operational units it requires: the discrete pieces of work an agent would\n",
     "need to perform to complete it, in the order they would naturally occur.\n",
     "\n",
     "Task prompt:\n",
     "{prompt}\n",
     "\n",
     "Label each unit \"1a\", \"1b\", \"1c\", ... in order. There is no fixed number of\n",
-    "units \u2014 infer however many the task actually requires. Give each a short\n",
+    "units. Infer however many the task actually requires. Give each a short\n",
     "description (a few words).\n",
     "\n",
     "Respond in JSON with exactly this shape:\n",
@@ -119,14 +121,14 @@
     "\n",
     "def classify_environmental_elements(prompt: str) -> list:\n",
     "    call_prompt = f'''You are analysing a task prompt to identify the specific\n",
-    "facts and data values it depends on \u2014 figures, rates, or terms explicitly\n",
+    "facts and data values it depends on: figures, rates, or terms explicitly\n",
     "given in the prompt that any correct solution must use consistently.\n",
     "\n",
     "Task prompt:\n",
     "{prompt}\n",
     "\n",
     "Label each element \"1E\", \"2E\", \"3E\", ... in the order they appear. There is\n",
-    "no fixed number \u2014 infer however many the task actually gives. Give each a\n",
+    "no fixed number. Infer however many the task actually gives. Give each a\n",
     "short description and its stated value.\n",
     "\n",
     "Respond in JSON with exactly this shape:\n",
@@ -147,9 +149,9 @@
    "source": [
     "## 4. Run the trajectory, tagged\n",
     "\n",
-    "Steps A\u2013D run as separate calls, each seeing only the steps before it. Each step's own output states which operational unit it fulfils and which environmental element(s) it drew on \u2014 this tagging is what lets the judge trace dependencies rather than just check the final answer.\n",
+    "Steps A to D run as separate calls, each seeing only the steps before it. Each step's output states which operational unit it fulfils and which environmental element(s) it draws on. This tagging is what allows the judge to trace dependencies between steps rather than only checking the final answer.\n",
     "\n",
-    "Set `INDUCE_DRIFT = True` below to reproduce the demo's engineered-failure run: Step C's instruction is deliberately corrupted with a wrong rate, so there is a real, attributable drift for the judge to catch. This is clearly a manufactured failure for demonstration, not an organic model error \u2014 set it back to `False` to see a clean run."
+    "Setting `INDUCE_DRIFT = True` below reproduces the demo's engineered failure: Step C's instruction is deliberately altered to use an incorrect rate, producing a real, attributable drift for the judge to catch. This is a manufactured failure for demonstration purposes, not an error the model produced on its own. Set it to `False` to run the task cleanly instead."
    ]
   },
   {
@@ -167,10 +169,10 @@
     ")\n",
     "\n",
     "def _format_units(units):\n",
-    "    return '\\n'.join(f\"{u['id']} \u2014 {u['description']}\" for u in units)\n",
+    "    return '\\n'.join(f\"{u['id']} - {u['description']}\" for u in units)\n",
     "\n",
     "def _format_elements(elements):\n",
-    "    return '\\n'.join(f\"{e['id']} \u2014 {e['description']} ({e.get('value', '')})\" for e in elements)\n",
+    "    return '\\n'.join(f\"{e['id']} - {e['description']} ({e.get('value', '')})\" for e in elements)\n",
     "\n",
     "def _parse_steps(task_prompt: str):\n",
     "    matches = list(re.finditer(r'\\*\\*Step ([A-Z]):\\*\\*\\s*(.+)', task_prompt))\n",
@@ -181,10 +183,10 @@
     "def _run_step(premise, units, elements, prior_steps, step_label, step_instruction, extra_feedback=None):\n",
     "    prior_text = '\\n'.join(\n",
     "        f\"Step {s['step']} (unit {s['unit']}): {s['output']}\" for s in prior_steps\n",
-    "    ) or '(none \u2014 this is the first step)'\n",
+    "    ) or '(none, this is the first step)'\n",
     "    feedback_block = f\"\\n\\nFeedback from a previous attempt at this step, address it before answering:\\n{extra_feedback}\" if extra_feedback else ''\n",
     "    call_prompt = f'''You are completing a finance task step by step. Only use\n",
-    "the information given below \u2014 do not introduce new facts or figures.\n",
+    "the information given below. Do not introduce new facts or figures.\n",
     "\n",
     "Task premise:\n",
     "{premise}\n",
@@ -221,7 +223,7 @@
     "    return trajectory\n",
     "\n",
     "if INDUCE_DRIFT:\n",
-    "    print('!! ENGINEERED DRIFT MODE \u2014 Step C has been deliberately corrupted for this demo run !!\\n')\n",
+    "    print('!! ENGINEERED DRIFT MODE: Step C has been deliberately corrupted for this demo run !!\\n')\n",
     "\n",
     "trajectory = run_trajectory(TASK_PROMPT, units, elements)\n",
     "print(json.dumps(trajectory, indent=2))"
@@ -231,17 +233,13 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "## Reference: a verified real run\n",
+    "## Reference: a verified run\n",
     "\n",
-    "For reference, here is an actual, verified output from this exact code (Gemini 3.5 Flash Lite), with `INDUCE_DRIFT = True`, saved as `runs/run_002_engineered_drift.json` in the repo:\n",
+    "For reference, this is an actual, verified output from this code (Gemini 3.5 Flash Lite), with `INDUCE_DRIFT = True`, saved as `runs/run_002_engineered_drift.json` in the repository.\n",
     "\n",
-    "- **Step A** stated the terms: bid premium 20% (`1E`), cash consideration 15% (`2E`).\n",
-    "- **Step C** (deliberately corrupted for this run) computed `$10,000 * 22% = $2,200` \u2014 silently ignoring `2E`'s true 15% value.\n",
-    "- **Judge verdict:** `judge_grade: \"fail\"`, `score: 0.75`, rationale: *\"Step C drifted from the established environmental element 2E. While element 2E states cash consideration is 15%, Step C calculates the cash portion using 22% ($10,000 * 0.22 = $2,200), conflicting with the stated parameters.\"*\n",
-    "- **Feedback generated:** *\"Revise Step C to calculate the cash portion using the 15% rate specified in environmental element 2E instead of 22%.\"*\n",
-    "- **Attempt 2:** `$10,000 * 15% = $1,500` \u2014 corrected, matching `2E` exactly.\n",
+    "Step A stated the terms: bid premium 20% (`1E`), cash consideration 15% (`2E`). Step C, deliberately altered for this run, computed `$10,000 * 22% = $2,200`, disregarding `2E`'s true 15% value. The judge returned `judge_grade: \"fail\"`, `score: 0.75`, with the rationale: \"Step C drifted from the established environmental element 2E. While element 2E states cash consideration is 15%, Step C calculates the cash portion using 22% ($10,000 * 0.22 = $2,200), conflicting with the stated parameters.\" The generated feedback read: \"Revise Step C to calculate the cash portion using the 15% rate specified in environmental element 2E instead of 22%.\" Attempt 2 then corrected to `$10,000 * 15% = $1,500`, matching `2E` exactly.\n",
     "\n",
-    "Run the cells below to reproduce this (results may vary slightly run to run, since the model is not deterministic)."
+    "Running the cells below reproduces this. Results may vary slightly between runs, since the model is not deterministic."
    ]
   },
   {
@@ -250,7 +248,7 @@
    "source": [
     "## 5. Judge the trajectory\n",
     "\n",
-    "One judge call sees the *whole tagged trajectory*, not just the final step, and is asked to: identify failures, assess dependencies (did each step correctly use the element it depended on?), and generate a structured reliability signal \u2014 shaped like Mercor's own Archipelago `GradeResult` format, since a `type: \"trajectory\"` verifier is explicitly listed there as not yet implemented."
+    "A single judge call is given the whole tagged trajectory, not just the final step. It is asked to identify failures, assess dependencies (whether each step correctly used the element it depended on), and generate a structured reliability signal. The output is shaped like Mercor's Archipelago `GradeResult` format, since a `type: \"trajectory\"` verifier is listed there as not yet implemented."
    ]
   },
   {
@@ -261,7 +259,7 @@
    "source": [
     "def judge_trajectory(trajectory, units, elements):\n",
     "    trajectory_text = '\\n'.join(\n",
-    "        f\"Step {s['step']} \u2014 unit {s['unit']}, elements used {s['elements_used']}: {s['output']}\"\n",
+    "        f\"Step {s['step']} - unit {s['unit']}, elements used {s['elements_used']}: {s['output']}\"\n",
     "        for s in trajectory\n",
     "    )\n",
     "    call_prompt = f'''You are the CARF Coordination Judge. You are given a\n",
@@ -278,9 +276,9 @@
     "{trajectory_text}\n",
     "\n",
     "Your job:\n",
-    "1. Identify failures \u2014 did any step's output conflict with an earlier step or\n",
+    "1. Identify failures: did any step's output conflict with an earlier step or\n",
     "   with the environmental elements' stated values?\n",
-    "2. Assess dependencies \u2014 for each step, trace whether it correctly used the\n",
+    "2. Assess dependencies: for each step, trace whether it correctly used the\n",
     "   environmental element(s) it was tagged as depending on, or whether a value\n",
     "   silently drifted from what was established earlier in the trajectory.\n",
     "3. Generate a reliability signal.\n",
@@ -290,7 +288,7 @@
     "Respond in JSON with exactly this shape:\n",
     "{{\"judge_grade\": \"pass\" or \"fail\",\n",
     "  \"score\": <float between 0.0 and 1.0>,\n",
-    "  \"grade_rationale\": \"<specific \u2014 cite step labels and element ids, explain any drift found>\",\n",
+    "  \"grade_rationale\": \"<specific, citing step labels and element ids, explaining any drift found>\",\n",
     "  \"affected_step\": \"<the single letter of the step most responsible, e.g. \\\\\"C\\\\\", or null if judge_grade is pass>\"}}\n",
     "'''\n",
     "    return _call_json(call_prompt)\n",
@@ -305,7 +303,7 @@
    "source": [
     "## 6. Close the loop: feedback and re-run\n",
     "\n",
-    "If the judge found a failure, its rationale is turned into one short corrective sentence, sent back to the agent, and the affected step is re-run with that feedback appended \u2014 the interventional half of CARF's feedback loop."
+    "If the judge found a failure, its rationale is turned into one short corrective sentence, sent back to the agent, and the affected step is re-run with that feedback included. This is the interventional half of the CARF feedback loop, alongside the evaluative use of the same signal for grading."
    ]
   },
   {
@@ -352,7 +350,7 @@
    "source": [
     "## 7. Summary\n",
     "\n",
-    "Run the cell below to print a clean before/after summary of this run."
+    "Running the cell below prints a before and after summary of this run."
    ]
   },
   {
@@ -372,7 +370,7 @@
     "    print(f\"  Feedback:  {loop_result['feedback']}\")\n",
     "    print(f\"  Attempt 2: {loop_result['attempt_2']['output']}\")\n",
     "else:\n",
-    "    print('No correction needed \u2014 judge found the trajectory consistent.')"
+    "    print('No correction needed. Judge found the trajectory consistent.')"
    ]
   }
  ],
